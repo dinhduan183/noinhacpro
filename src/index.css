@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+@theme {
+  --color-slate-850: #151e2e;
+}
+
+@layer base {
+  body {
+    background-color: #0f172a; /* slate-900 */
+    color: #f8fafc; /* slate-50 */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    user-select: none;
+    -webkit-app-region: drag; /* make the whole app draggable from empty space */
+  }
+
+  /* Make inputs, buttons interactive (not draggable window) */
+  input, button, a, [role="button"], .interactive {
+    -webkit-app-region: no-drag;
+  }
+}
+
+/* Custom scrollbar for modern looks */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
