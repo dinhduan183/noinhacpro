@@ -29,5 +29,6 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
   },
   offProgress: () => {
     ipcRenderer.removeAllListeners('ffmpeg:progress');
-  }
+  },
+  showInFolder: (filePath: string) => ipcRenderer.invoke('shell:showInFolder', filePath),
 })

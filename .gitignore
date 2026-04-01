@@ -1,30 +1,28 @@
-# Dependencies
-node_modules/
-
-# Build outputs
-dist/
-dist-electron/
-
-# Tailwind / PostCSS
-.postcss-cache/
-
-# Vite
-.vite/
-
-# Temp FFmpeg folder
-tmp/
-
-# macOS
-.DS_Store
-
-# Editor
-.vscode/
-.idea/
-
 # Logs
+logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Environment
-.env
-.env.local
+node_modules
+dist
+dist-ssr
+dist-electron
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+npm-install.log
+release/

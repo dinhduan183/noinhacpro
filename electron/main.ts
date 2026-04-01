@@ -1,26 +1,58 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import path from 'path'
 import fs from 'fs'
+import { fileURLToPath } from 'url'
 import ffmpeg from 'fluent-ffmpeg'
-import ffmpegPath from '@ffmpeg-installer/ffmpeg'
 
-// Fix __dirname for CJS context (vite-plugin-electron compiles to CJS)
+// Fix __dirname for CJS/ESM context - works correctly on both Windows and macOS
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const __dirname: string = (() => {
   try {
-    // ESM: use import.meta.url if available
-    return path.dirname(new URL((import.meta as any).url).pathname)
+    // ESM: use import.meta.url with fileURLToPath (handles paths correctly)
+    return path.dirname(fileURLToPath((import.meta as any).url))
   } catch {
     // CJS fallback
     return path.dirname(__filename)
   }
 })()
 
-// Set ffmpeg path (replace app.asar for packaged app)
-const resolvedFfmpegPath = ffmpegPath.path.includes('app.asar')
-  ? ffmpegPath.path.replace('app.asar', 'app.asar.unpacked')
-  : ffmpegPath.path
-ffmpeg.setFfmpegPath(resolvedFfmpegPath)
+// Dynamic FFMpeg path depending on environment
+// Priority: bin/ folder (production or manual placement) → @ffmpeg-installer fallback (dev on Mac)
+const binPath = app.isPackaged 
+  ? path.join(process.resourcesPath, 'bin') // Khi đã Packaged -> trượt ra ngoài resources/bin
+  : path.join(process.cwd(), 'bin');        // Khi đang Dev -> đọc từ mục bin ở gốc project
+
+const ffmpegBinary = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+const ffprobeBinary = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+const ffmpegInBin = path.join(binPath, ffmpegBinary);
+const ffprobeInBin = path.join(binPath, ffprobeBinary);
+
+// ── FFMPEG ──
+let ffmpegExecutable: string;
+if (fs.existsSync(ffmpegInBin)) {
+  ffmpegExecutable = ffmpegInBin;
+} else {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+  ffmpegExecutable = ffmpegInstaller.path.includes('app.asar')
+    ? ffmpegInstaller.path.replace('app.asar', 'app.asar.unpacked')
+    : ffmpegInstaller.path;
+}
+ffmpeg.setFfmpegPath(ffmpegExecutable);
+
+// ── FFPROBE ──
+let ffprobeExecutable: string;
+if (fs.existsSync(ffprobeInBin)) {
+  ffprobeExecutable = ffprobeInBin;
+} else {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
+  ffprobeExecutable = ffprobeInstaller.path.includes('app.asar')
+    ? ffprobeInstaller.path.replace('app.asar', 'app.asar.unpacked')
+    : ffprobeInstaller.path;
+}
+ffmpeg.setFfprobePath(ffprobeExecutable);
+
 
 // The built directory structure
 process.env.APP_ROOT = path.join(__dirname, '..')
@@ -38,6 +70,7 @@ function createWindow() {
     height: 800,
     title: 'Nối nhạc Pro',
     backgroundColor: '#0f172a',
+    autoHideMenuBar: true, // Tự động ẩn Menu Bar
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -91,12 +124,12 @@ ipcMain.handle('fs:readMp3Files', async (_, dirPath: string) => {
   try {
     const files = fs.readdirSync(dirPath)
     const mp3Names = files.filter(f => f.toLowerCase().endsWith('.mp3'))
-    // Lấy duration song song cho tất cả file
+    // Lấy metadata song song cho tất cả file
     const mp3Files = await Promise.all(
       mp3Names.map(async (f) => {
         const filePath = path.join(dirPath, f)
-        const duration = await getAudioDuration(filePath)
-        return { name: f, path: filePath, duration }
+        const meta = await getAudioMetadata(filePath)
+        return { name: f, path: filePath, ...meta }
       })
     )
     return mp3Files
@@ -106,18 +139,25 @@ ipcMain.handle('fs:readMp3Files', async (_, dirPath: string) => {
   }
 })
 
-// TODO: Thêm hàm xử lý FFmpeg (mergeAudio) sau.
-// Helper: lấy duration (giây) của 1 file MP3 via ffprobe
-function getAudioDuration(filePath: string): Promise<number> {
+// Helper: lấy metadata (duration, bitrate, sampleRate) của 1 file MP3 via ffprobe
+function getAudioMetadata(filePath: string): Promise<{ duration: number; bitrate: number; sampleRate: number }> {
   return new Promise((resolve) => {
     ffmpeg.ffprobe(filePath, (err, metadata) => {
-      if (err || !metadata?.format?.duration) {
-        resolve(0) // fallback nếu lỗi
+      if (err || !metadata) {
+        resolve({ duration: 0, bitrate: 0, sampleRate: 0 })
       } else {
-        resolve(metadata.format.duration)
+        const duration = metadata.format?.duration ?? 0
+        const bitrate = Math.round((metadata.format?.bit_rate ?? 0) / 1000) // kbps
+        const sampleRate = metadata.streams?.[0]?.sample_rate ?? 0           // Hz
+        resolve({ duration, bitrate, sampleRate })
       }
     })
   })
+}
+
+// Helper: getAudioDuration (dùng nội bộ để tính tracklist khi merge)
+function getAudioDuration(filePath: string): Promise<number> {
+  return getAudioMetadata(filePath).then(m => m.duration)
 }
 
 // Helper: chuyển giây sang định dạng HH:MM:SS
@@ -144,7 +184,7 @@ ipcMain.handle('dialog:saveFile', async (_, defaultPath: string) => {
   return filePath
 })
 
-ipcMain.handle('ffmpeg:mergeAudio', async (event, { files, fileNames, savePath }: { files: string[], fileNames: string[], savePath: string }) => {
+ipcMain.handle('ffmpeg:mergeAudio', async (event, { files, fileNames, savePath, mergeMode = 'copy' }: { files: string[], fileNames: string[], savePath: string, mergeMode: 'copy' | 'convert' }) => {
   // 1. Lấy duration từng file (song song để nhanh)
   const durations = await Promise.all(files.map(f => getAudioDuration(f)))
 
@@ -160,30 +200,45 @@ ipcMain.handle('ffmpeg:mergeAudio', async (event, { files, fileNames, savePath }
   }
   const tracklistContent = tracklistLines.join('\n')
 
-  // 3. Gộp file MP3 bằng filter_complex concat (hỗ trợ codec/sample rate khác nhau)
+  // 3. Ghi file list cho FFmpeg Concat Demuxer
+  const totalSecs = durations.reduce((sum, d) => sum + d, 0); // tổng duration để tính %
+  
+  const tempConcatFile = path.join(app.getPath('temp'), `concat_list_${Date.now()}.txt`);
+  // Chuẩn hóa path cho FFmpeg (thoát ký tự nháy đơn)
+  const concatLines = files.map(f => `file '${f.replace(/'/g, "'\\''")}'`).join('\n');
+  fs.writeFileSync(tempConcatFile, concatLines, 'utf-8');
+
+  // Helper: parse timemark "HH:MM:SS.xx" → giây
+  const parseTimemark = (timemark: string): number => {
+    const parts = timemark.split(':')
+    if (parts.length !== 3) return 0
+    return parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2])
+  }
+
   await new Promise<void>((resolve, reject) => {
     const command = ffmpeg()
-    files.forEach(file => command.input(file))
+      .input(tempConcatFile)
+      .inputOptions(['-f concat', '-safe 0']);
 
-    // Tạo filter_complex: [0:a][1:a]...[n:a]concat=n=X:v=0:a=1[out]
-    const inputLabels = files.map((_, i) => `[${i}:a]`).join('')
-    const filterComplex = `${inputLabels}concat=n=${files.length}:v=0:a=1[out]`
+    if (mergeMode === 'copy') {
+      command.outputOptions(['-c copy']);
+    } else {
+      command.outputOptions([
+        '-acodec libmp3lame',
+        '-q:a 2', // VBR ~190kbps
+      ]);
+    }
 
     command
-      .outputOptions([
-        '-filter_complex', filterComplex,
-        '-map', '[out]',
-        '-acodec', 'libmp3lame',
-        '-q:a', '2',           // VBR ~190kbps - chất lượng cao
-      ])
       .output(savePath)
       .on('error', (err) => {
         console.error('FFmpeg error:', err)
         reject(err)
       })
       .on('progress', (progress) => {
-        if (win) {
-          const percent = Math.min(Math.round(progress.percent ?? 0), 99)
+        if (win && totalSecs > 0 && progress.timemark) {
+          const processed = parseTimemark(progress.timemark)
+          const percent = Math.min(Math.round((processed / totalSecs) * 100), 99)
           win.webContents.send('ffmpeg:progress', percent)
         }
       })
@@ -194,6 +249,13 @@ ipcMain.handle('ffmpeg:mergeAudio', async (event, { files, fileNames, savePath }
       .run()
   })
 
+  // Xóa file tạm
+  try {
+    fs.unlinkSync(tempConcatFile);
+  } catch (error) {
+    console.warn('Không thể xóa file tạm: ', error);
+  }
+
   // 4. Ghi file tracklist .txt cạnh file MP3
   const tracklistPath = savePath.replace(/\.mp3$/i, '_tracklist.txt')
   fs.writeFileSync(tracklistPath, tracklistContent, 'utf-8')
@@ -201,3 +263,6 @@ ipcMain.handle('ffmpeg:mergeAudio', async (event, { files, fileNames, savePath }
   return { savePath, tracklistPath }
 })
 
+ipcMain.handle('shell:showInFolder', (_, filePath: string) => {
+  shell.showItemInFolder(filePath)
+})

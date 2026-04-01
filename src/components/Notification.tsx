@@ -1,41 +1,66 @@
 import React from 'react';
-import { CheckCircle2, XCircle, X } from 'lucide-react';
+import { CheckCircle2, XCircle, X, FolderOpen } from 'lucide-react';
 
 interface NotificationProps {
   type: 'success' | 'error';
   message: string;
   detail?: string;
+  savePath?: string;
   onClose: () => void;
 }
 
-export const Notification: React.FC<NotificationProps> = ({ type, message, detail, onClose }) => {
+export const Notification: React.FC<NotificationProps> = ({ type, message, detail, savePath, onClose }) => {
   const isError = type === 'error';
+
+  const handleShowInFolder = () => {
+    if (savePath) {
+      // @ts-ignore
+      window.ipcRenderer.showInFolder(savePath);
+    }
+  };
+
+  const lines = detail ? detail.trim().split('\n').filter(Boolean) : [];
+
   return (
     <div
-      className={`mx-6 mb-3 flex items-start gap-3 p-4 rounded-2xl border interactive
+      className={`flex items-start gap-2.5 px-3 py-2.5 rounded-xl border interactive max-w-lg
         ${isError
-          ? 'bg-red-950/60 border-red-500/30 text-red-200'
-          : 'bg-emerald-950/60 border-emerald-500/30 text-emerald-200'
+          ? 'bg-red-950/80 border-red-500/30 text-red-200'
+          : 'bg-emerald-950/80 border-emerald-500/30 text-emerald-200'
         }`}
     >
-      <div className="shrink-0 mt-0.5">
-        {isError
-          ? <XCircle size={20} className="text-red-400" />
-          : <CheckCircle2 size={20} className="text-emerald-400" />
-        }
+      {/* Status icon */}
+      {isError
+        ? <XCircle size={15} className="text-red-400 shrink-0 mt-0.5" />
+        : <CheckCircle2 size={15} className="text-emerald-400 shrink-0 mt-0.5" />
+      }
+
+      {/* Content */}
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-semibold">{message}</p>
+        {lines.map((line, i) => (
+          <p key={i} className="text-[10px] opacity-60 truncate font-mono mt-0.5">{line}</p>
+        ))}
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold">{message}</p>
-        {detail && (
-          <p className="text-xs mt-1 opacity-70 break-all font-mono whitespace-pre-wrap">{detail}</p>
+
+      {/* Right actions: open folder + close */}
+      <div className="flex items-center gap-1 shrink-0">
+        {!isError && savePath && (
+          <button
+            onClick={handleShowInFolder}
+            title="Mở thư mục chứa"
+            className="flex items-center gap-1 text-[10px] font-medium text-emerald-400 hover:text-emerald-300 px-1.5 py-0.5 rounded hover:bg-white/10 transition-colors"
+          >
+            <FolderOpen size={11} /> Mở thư mục
+          </button>
         )}
+        <button
+          onClick={onClose}
+          className="p-0.5 rounded hover:bg-white/10 transition-colors"
+        >
+          <X size={13} />
+        </button>
       </div>
-      <button
-        onClick={onClose}
-        className="shrink-0 p-1 rounded-lg hover:bg-white/10 transition-colors"
-      >
-        <X size={16} />
-      </button>
     </div>
   );
 };
