@@ -23,8 +23,7 @@
       "bin/**/*"
     ],
     "mac": {
-      "target": "dmg",
-      "icon": "public/icon.ico"
+      "target": "dmg"
     },
     "win": {
       "target": "nsis",
