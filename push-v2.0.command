@@ -1,12 +1,12 @@
 #!/bin/bash
-# Script: commit fix icon (256x256) + dời tag v2.0 → trigger lại GitHub Actions build
+# Script: fix runtime crash + dời tag v2.0 → trigger build lại
 # Double-click trong Finder để chạy
 
 set -e
 cd "$(dirname "$0")"
 
 echo "════════════════════════════════════════════"
-echo "  Fix lỗi build Windows: icon.ico < 256x256"
+echo "  Fix lỗi 'undefined: undefined' khi mở app"
 echo "  → commit + re-tag v2.0 để build lại"
 echo "════════════════════════════════════════════"
 echo ""
@@ -29,15 +29,38 @@ if git diff --cached --quiet; then
   echo "[3] Không có thay đổi mới — bỏ qua commit."
   NEW_COMMIT=false
 else
-  echo "[3] Tạo commit fix icon..."
-  git commit -m "fix(build): tạo lại icon.ico multi-size 16/32/48/64/128/256 cho Windows
+  echo "[3] Tạo commit fix runtime crash..."
+  git commit -m "fix(electron): app crash 'undefined: undefined' ngay sau khi cài
 
-electron-builder yêu cầu icon Windows tối thiểu 256x256.
-icon.ico cũ chỉ 32x32 → build:win fail với:
-  ⨯ image public/icon.ico must be at least 256x256
+Nguyên nhân:
+Vite/rolldown đã bundle nguyên @ffmpeg-installer/ffmpeg index.js
+vào main.js. Bên trong package này có code dùng __dirname để xác
+định path tới sub-package platform-specific (@ffmpeg-installer/win32-x64,
+@ffmpeg-installer/darwin-arm64). Khi bị bundle, __dirname trỏ vào
+main.js (sai vị trí) → các path lookup đều fail → package throw một
+chuỗi string (không phải Error object) → Electron dialog hiển thị
+'undefined: undefined' vì string không có name/message property.
 
-Đã regenerate từ icon.png (512x512) gốc với 6 frame chuẩn,
-đảm bảo Windows hiển thị icon sắc nét ở mọi DPI."
+Sửa:
+1. vite.config.ts: thêm rollupOptions.external cho fluent-ffmpeg,
+   @ffmpeg-installer/*, @ffprobe-installer/* — để các package này
+   được require ở runtime với __dirname đúng vị trí trong node_modules.
+
+2. package.json:
+   - Thêm asarUnpack cho 3 package trên (binary cần nằm ngoài asar
+     để có thể spawn được).
+   - Thêm node_modules/**/* và package.json vào files (cần thiết khi
+     external + asarUnpack).
+   - Bỏ bin/**/* khỏi files (không dùng đến, tiết kiệm 158MB build).
+
+3. electron/main.ts:
+   - Thêm process.on('uncaughtException') + 'unhandledRejection' bắt
+     mọi lỗi sớm và ghi log vào userData/main-error.log.
+   - Wrap setup ffmpeg/ffprobe trong try-catch — không crash app nếu
+     setup fail, chỉ log lỗi.
+   - Validate result từ require() trước khi access .path.
+   - Dialog.showErrorBox khi có uncaughtException — hiển thị message
+     thật thay vì 'undefined: undefined'."
   echo "✓ Đã commit"
   NEW_COMMIT=true
 fi
@@ -49,39 +72,32 @@ echo "✓ Đã push main"
 echo ""
 
 if [ "$NEW_COMMIT" = "true" ]; then
-  echo "[5] Dời tag v2.0 sang commit mới (đã fix icon)..."
+  echo "[5] Dời tag v2.0 sang commit mới (đã fix runtime crash)..."
 
-  # Xoá tag cũ cục bộ
   if git rev-parse v2.0 >/dev/null 2>&1; then
     git tag -d v2.0
     echo "  ✓ Đã xoá tag v2.0 cục bộ"
   fi
 
-  # Xoá tag cũ trên remote
   if git ls-remote --tags origin | grep -q "refs/tags/v2.0$"; then
     git push origin :refs/tags/v2.0
     echo "  ✓ Đã xoá tag v2.0 trên GitHub"
   fi
 
-  # Tạo lại tag mới ở HEAD
   git tag -a v2.0 -m "Release v2.0 — Ẩn/hiện panel thư mục
 
 Tính năng mới:
 • Bật/tắt từng panel thư mục khỏi tracklist mà không phải xóa
 • Nút Eye/EyeOff trên mỗi panel
 • Tracklist, tổng thời gian, file merge tự động loại trừ panel bị ẩn
-• Hiển thị trạng thái '(ẩn)' rõ ràng cho thư mục đang tắt
 
 Sửa lỗi:
 • Electron build không bundle nhầm ffmpeg/ffprobe installer
 • Icon Windows được tạo lại đúng kích thước 256x256
+• Fix crash 'undefined: undefined' ngay sau khi cài app
 
 CI/CD:
-• GitHub Actions tự build .dmg (Mac) + .exe (Windows) khi push tag
-
-Khác:
-• Thêm icon.ico cho Windows build
-• Thêm script Mở App.command cho macOS"
+• GitHub Actions tự build .dmg (Mac) + .exe (Windows) khi push tag"
   echo "  ✓ Đã tạo lại tag v2.0"
 
   git push origin v2.0
@@ -97,8 +113,13 @@ echo ""
 echo "  Theo dõi build (mất ~10-15 phút):"
 echo "  https://github.com/dinhduan183/noinhacpro/actions"
 echo ""
-echo "  Khi xong, tải installer tại:"
+echo "  Khi xong, cài lại app từ Release v2.0:"
 echo "  https://github.com/dinhduan183/noinhacpro/releases"
+echo ""
+echo "  Nếu vẫn còn lỗi sau khi cài lại, log đầy đủ"
+echo "  được ghi tại userData/main-error.log:"
+echo "    Mac: ~/Library/Application Support/Noi Nhac Pro/"
+echo "    Win: %APPDATA%/Noi Nhac Pro/"
 echo "════════════════════════════════════════════"
 echo ""
 echo "Nhấn phím bất kỳ để đóng cửa sổ..."

@@ -13,6 +13,24 @@ export default defineConfig({
     electron([
       {
         entry: 'electron/main.ts',
+        vite: {
+          build: {
+            // Không bundle các package có dynamic require theo __dirname.
+            // Nếu bundle, __dirname trong package sẽ trỏ vào main.js (sai vị trí)
+            // → không tìm được binary platform-specific → throw string → dialog
+            // 'undefined: undefined' khi mở app sau khi cài.
+            rollupOptions: {
+              external: [
+                'electron',
+                'fluent-ffmpeg',
+                '@ffmpeg-installer/ffmpeg',
+                '@ffprobe-installer/ffprobe',
+                /^@ffmpeg-installer\/.*/,
+                /^@ffprobe-installer\/.*/,
+              ],
+            },
+          },
+        },
       },
       {
         entry: 'electron/preload.ts',

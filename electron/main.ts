@@ -16,46 +16,122 @@ const __dirname: string = (() => {
   }
 })()
 
-// Dynamic FFMpeg path depending on environment
-// Priority: bin/ folder (production or manual placement) → @ffmpeg-installer fallback (dev on Mac)
-const binPath = app.isPackaged 
-  ? path.join(process.resourcesPath, 'bin') // Khi đã Packaged -> trượt ra ngoài resources/bin
-  : path.join(process.cwd(), 'bin');        // Khi đang Dev -> đọc từ mục bin ở gốc project
+// ─────────────────────────────────────────────────────────────────────────────
+//  GLOBAL ERROR HANDLER — bắt mọi lỗi không xử lý (kể cả trước khi window mở)
+//  Ghi log ra file userData/main-error.log để debug khi app cài xong bị crash.
+// ─────────────────────────────────────────────────────────────────────────────
+function getLogPath(): string {
+  try {
+    return path.join(app.getPath('userData'), 'main-error.log')
+  } catch {
+    return path.join(process.cwd(), 'main-error.log')
+  }
+}
 
-const ffmpegBinary = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
-const ffprobeBinary = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
-const ffmpegInBin = path.join(binPath, ffmpegBinary);
-const ffprobeInBin = path.join(binPath, ffprobeBinary);
+function logFatal(prefix: string, err: unknown): void {
+  const time = new Date().toISOString()
+  let msg: string
+  if (err instanceof Error) {
+    msg = `${err.name}: ${err.message}\n${err.stack ?? ''}`
+  } else if (typeof err === 'string') {
+    msg = `String thrown: ${err}`
+  } else {
+    msg = `Non-Error thrown: ${JSON.stringify(err)}`
+  }
+  const line = `[${time}] ${prefix}\n${msg}\n\n`
+  // Cố gắng ghi file, không crash nếu thất bại
+  try {
+    fs.appendFileSync(getLogPath(), line, 'utf-8')
+  } catch { /* noop */ }
+  // In ra stderr để xem khi chạy từ Terminal
+  console.error(line)
+}
+
+process.on('uncaughtException', (err) => {
+  logFatal('uncaughtException', err)
+  // Hiển thị dialog với message thật (thay vì 'undefined: undefined')
+  try {
+    const text = err instanceof Error
+      ? `${err.message}\n\nStack:\n${err.stack ?? '(không có stack)'}`
+      : `Lỗi không xác định: ${String(err)}`
+    dialog.showErrorBox('Lỗi khi khởi động Nối nhạc Pro', text)
+  } catch { /* noop */ }
+})
+
+process.on('unhandledRejection', (reason) => {
+  logFatal('unhandledRejection', reason)
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  FFMPEG / FFPROBE PATH RESOLUTION
+//  Ưu tiên: bin/ folder (dev hoặc manually placed) → @ffmpeg-installer fallback
+// ─────────────────────────────────────────────────────────────────────────────
+const binPath = app.isPackaged
+  ? path.join(process.resourcesPath, 'bin') // Khi đã Packaged
+  : path.join(process.cwd(), 'bin')          // Khi đang Dev
+
+const ffmpegBinary = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+const ffprobeBinary = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe'
+const ffmpegInBin = path.join(binPath, ffmpegBinary)
+const ffprobeInBin = path.join(binPath, ffprobeBinary)
+
+// Helper: lấy path từ @ffmpeg-installer/ffmpeg với asar.unpacked rewrite
+function resolveInstallerPath(installerPath: string): string {
+  // Khi app được đóng asar, các package có dynamic require sẽ trả về path
+  // dạng `.../app.asar/node_modules/@ffmpeg-installer/win32-x64/ffmpeg.exe`.
+  // Nhưng binary thực sự nằm trong app.asar.unpacked vì đã khai báo asarUnpack.
+  return installerPath.includes('app.asar')
+    ? installerPath.replace('app.asar', 'app.asar.unpacked')
+    : installerPath
+}
 
 // ── FFMPEG ──
-let ffmpegExecutable: string;
-if (fs.existsSync(ffmpegInBin)) {
-  ffmpegExecutable = ffmpegInBin;
-} else {
-  // Bỏ qua Vite bundler bằng require qua một biến chuỗi
-  const reqPath = '@ffmpeg-installer/ffmpeg';
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const ffmpegInstaller = require(reqPath);
-  ffmpegExecutable = ffmpegInstaller.path.includes('app.asar')
-    ? ffmpegInstaller.path.replace('app.asar', 'app.asar.unpacked')
-    : ffmpegInstaller.path;
+try {
+  let ffmpegExecutable: string
+  if (fs.existsSync(ffmpegInBin)) {
+    ffmpegExecutable = ffmpegInBin
+  } else {
+    // Bỏ qua Vite bundler bằng require qua biến chuỗi
+    const reqPath = '@ffmpeg-installer/ffmpeg'
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const ffmpegInstaller = require(reqPath)
+    if (!ffmpegInstaller || !ffmpegInstaller.path) {
+      throw new Error(`@ffmpeg-installer/ffmpeg không trả về path. Got: ${JSON.stringify(ffmpegInstaller)}`)
+    }
+    ffmpegExecutable = resolveInstallerPath(ffmpegInstaller.path)
+  }
+  if (!fs.existsSync(ffmpegExecutable)) {
+    throw new Error(`File ffmpeg không tồn tại tại: ${ffmpegExecutable}`)
+  }
+  ffmpeg.setFfmpegPath(ffmpegExecutable)
+  console.log('[ffmpeg] dùng binary:', ffmpegExecutable)
+} catch (err) {
+  logFatal('Không setup được ffmpeg path', err)
+  // Không throw — để app vẫn chạy được, chỉ là chức năng merge sẽ fail riêng
 }
-ffmpeg.setFfmpegPath(ffmpegExecutable);
 
 // ── FFPROBE ──
-let ffprobeExecutable: string;
-if (fs.existsSync(ffprobeInBin)) {
-  ffprobeExecutable = ffprobeInBin;
-} else {
-  // Bỏ qua Vite bundler
-  const reqPath = '@ffprobe-installer/ffprobe';
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const ffprobeInstaller = require(reqPath);
-  ffprobeExecutable = ffprobeInstaller.path.includes('app.asar')
-    ? ffprobeInstaller.path.replace('app.asar', 'app.asar.unpacked')
-    : ffprobeInstaller.path;
+try {
+  let ffprobeExecutable: string
+  if (fs.existsSync(ffprobeInBin)) {
+    ffprobeExecutable = ffprobeInBin
+  } else {
+    const reqPath = '@ffprobe-installer/ffprobe'
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const ffprobeInstaller = require(reqPath)
+    if (!ffprobeInstaller || !ffprobeInstaller.path) {
+      throw new Error(`@ffprobe-installer/ffprobe không trả về path. Got: ${JSON.stringify(ffprobeInstaller)}`)
+    }
+    ffprobeExecutable = resolveInstallerPath(ffprobeInstaller.path)
+  }
+  if (!fs.existsSync(ffprobeExecutable)) {
+    throw new Error(`File ffprobe không tồn tại tại: ${ffprobeExecutable}`)
+  }
+  ffmpeg.setFfprobePath(ffprobeExecutable)
+  console.log('[ffprobe] dùng binary:', ffprobeExecutable)
+} catch (err) {
+  logFatal('Không setup được ffprobe path', err)
 }
-ffmpeg.setFfprobePath(ffprobeExecutable);
 
 
 // The built directory structure

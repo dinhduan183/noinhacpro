@@ -20,7 +20,12 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "bin/**/*"
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/@ffmpeg-installer/**/*",
+      "node_modules/@ffprobe-installer/**/*",
+      "node_modules/fluent-ffmpeg/**/*"
     ],
     "mac": {
       "target": "dmg",
