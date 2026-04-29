@@ -32,8 +32,10 @@ let ffmpegExecutable: string;
 if (fs.existsSync(ffmpegInBin)) {
   ffmpegExecutable = ffmpegInBin;
 } else {
+  // Bỏ qua Vite bundler bằng require qua một biến chuỗi
+  const reqPath = '@ffmpeg-installer/ffmpeg';
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+  const ffmpegInstaller = require(reqPath);
   ffmpegExecutable = ffmpegInstaller.path.includes('app.asar')
     ? ffmpegInstaller.path.replace('app.asar', 'app.asar.unpacked')
     : ffmpegInstaller.path;
@@ -45,8 +47,10 @@ let ffprobeExecutable: string;
 if (fs.existsSync(ffprobeInBin)) {
   ffprobeExecutable = ffprobeInBin;
 } else {
+  // Bỏ qua Vite bundler
+  const reqPath = '@ffprobe-installer/ffprobe';
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
+  const ffprobeInstaller = require(reqPath);
   ffprobeExecutable = ffprobeInstaller.path.includes('app.asar')
     ? ffprobeInstaller.path.replace('app.asar', 'app.asar.unpacked')
     : ffprobeInstaller.path;

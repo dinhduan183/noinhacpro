@@ -13,6 +13,7 @@ export interface PanelState {
   files: Mp3File[];
   originalFiles: Mp3File[];
   selectedCount: number;
+  enabled: boolean; // true = visible & included in tracklist, false = hidden/disabled
 }
 
 // Flat entry in the merged tracklist (can be freely reordered)

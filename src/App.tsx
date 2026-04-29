@@ -10,9 +10,9 @@ import type { PanelState, MergedEntry } from './types';
 function App() {
   const [nextId, setNextId] = useState(4);
   const [panels, setPanels] = useState<PanelState[]>([
-    { id: 1, dirPath: null, files: [], originalFiles: [], selectedCount: 0 },
-    { id: 2, dirPath: null, files: [], originalFiles: [], selectedCount: 0 },
-    { id: 3, dirPath: null, files: [], originalFiles: [], selectedCount: 0 },
+    { id: 1, dirPath: null, files: [], originalFiles: [], selectedCount: 0, enabled: true },
+    { id: 2, dirPath: null, files: [], originalFiles: [], selectedCount: 0, enabled: true },
+    { id: 3, dirPath: null, files: [], originalFiles: [], selectedCount: 0, enabled: true },
   ]);
 
   // Flat reorderable list — the single source of truth for what gets merged
@@ -28,11 +28,11 @@ function App() {
     savePath?: string;
   } | null>(null);
 
-  const { totalDuration } = computeTracklist(mergedList);
-  const totalSongs = mergedList.length;
+  const { totalDuration } = computeTracklist(mergedList.filter(e => panels.find(p => p.id === e.panelId)?.enabled !== false));
+  const totalSongs = mergedList.filter(e => panels.find(p => p.id === e.panelId)?.enabled !== false).length;
   const hasSelection = totalSongs > 0;
 
-  // Count active entries per panel (derived from mergedList)
+  // Count active entries per panel (derived from mergedList, only enabled panels)
   const activeCounts = new Map<number, number>();
   mergedList.forEach(e => activeCounts.set(e.panelId, (activeCounts.get(e.panelId) ?? 0) + 1));
 
@@ -120,7 +120,7 @@ function App() {
 
   // ── Add / Remove panels ──
   const handleAddPanel = () => {
-    setPanels(prev => [...prev, { id: nextId, dirPath: null, files: [], originalFiles: [], selectedCount: 0 }]);
+    setPanels(prev => [...prev, { id: nextId, dirPath: null, files: [], originalFiles: [], selectedCount: 0, enabled: true }]);
     setNextId(prev => prev + 1);
   };
 
@@ -162,9 +162,15 @@ function App() {
       files: newFiles,
       originalFiles: newOriginals,
       selectedCount: newEntries.length,
+      enabled: true,
     }]);
     setMergedList(prev => [...prev, ...newEntries]);
     setNextId(prev => prev + 1);
+  };
+
+  // ── Toggle panel visibility ──
+  const handleTogglePanel = (panelId: number) => {
+    setPanels(prev => prev.map(p => p.id === panelId ? { ...p, enabled: !p.enabled } : p));
   };
 
   const handlePanelReorder = (result: DropResult) => {
@@ -251,8 +257,12 @@ function App() {
 
       window.ipcRenderer.onProgress((p: number) => setProgress(Math.round(p)));
 
-      const orderedFiles = mergedList.map(e => e.path);
-      const orderedNames = mergedList.map(e => e.name);
+      const orderedFiles = mergedList
+        .filter(e => panels.find(p => p.id === e.panelId)?.enabled !== false)
+        .map(e => e.path);
+      const orderedNames = mergedList
+        .filter(e => panels.find(p => p.id === e.panelId)?.enabled !== false)
+        .map(e => e.name);
 
       const result = await window.ipcRenderer.mergeAudio({ 
         files: orderedFiles, 
@@ -345,6 +355,7 @@ function App() {
                             onRandomize={handleRandomize}
                             onReset={handleReset}
                             onRemovePanel={handleRemovePanel}
+                            onToggleEnabled={handleTogglePanel}
                           />
                         </div>
                       )}

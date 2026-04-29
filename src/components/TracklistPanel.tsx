@@ -61,11 +61,20 @@ export const TracklistPanel: React.FC<TracklistPanelProps> = ({
 
   const handleDragEnd = (result: DropResult) => {
     if (!result.destination) return;
-    onReorder(result.source.index, result.destination.index);
+    // Map visible index back to full mergedList index
+    const enabledPanelIds = new Set(panels.filter(p => p.enabled !== false).map(p => p.id));
+    const visibleEntries = entries.filter(e => enabledPanelIds.has(e.panelId));
+    const fromEntry = visibleEntries[result.source.index];
+    const toEntry = visibleEntries[result.destination.index];
+    const fromIdx = entries.indexOf(fromEntry);
+    const toIdx = entries.indexOf(toEntry);
+    if (fromIdx !== -1 && toIdx !== -1) onReorder(fromIdx, toIdx);
   };
 
   const handleCopy = () => {
-    const { tracks } = computeTracklist(entries);
+    const enabledPanelIds = new Set(panels.filter(p => p.enabled !== false).map(p => p.id));
+    const visibleEntries = entries.filter(e => enabledPanelIds.has(e.panelId));
+    const { tracks } = computeTracklist(visibleEntries);
     const text = tracks.map(t => `${t.timestamp} ${t.name}`).join('\n');
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
@@ -73,9 +82,11 @@ export const TracklistPanel: React.FC<TracklistPanelProps> = ({
     });
   };
 
-  // Compute cumulative timestamps
+  // Compute cumulative timestamps — only for enabled panels
+  const enabledPanelIds = new Set(panels.filter(p => p.enabled !== false).map(p => p.id));
+  const visibleEntries = entries.filter(e => enabledPanelIds.has(e.panelId));
   let cum = 0;
-  const withTs = entries.map(e => {
+  const withTs = visibleEntries.map(e => {
     const ts = secondsToTimestamp(cum);
     cum += e.duration;
     return { ...e, timestamp: ts };
@@ -137,10 +148,12 @@ export const TracklistPanel: React.FC<TracklistPanelProps> = ({
           {panels.map((p) => {
             if (!p.dirPath) return null;
             const c = PANEL_COLORS[(p.id - 1) % PANEL_COLORS.length];
+            const active = p.enabled !== false;
             return (
-              <span key={p.id} className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c.dot }} />
+              <span key={p.id} className={`flex items-center gap-1.5 text-[11px] transition-opacity ${active ? 'text-slate-400' : 'text-slate-600 opacity-40'}`}>
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: active ? c.dot : '#475569' }} />
                 {p.dirPath.split(/[/\\]/).pop()}
+                {!active && <span className="text-[9px] text-slate-600">(ẩn)</span>}
               </span>
             );
           })}
@@ -148,15 +161,15 @@ export const TracklistPanel: React.FC<TracklistPanelProps> = ({
       )}
 
       {/* ── Empty state ── */}
-      {entries.length === 0 && (
+      {visibleEntries.length === 0 && (
         <div className="flex-1 flex flex-col items-center justify-center text-slate-600 gap-3">
           <ListMusic size={40} className="opacity-30" />
-          <p className="text-sm">Chưa có bài nào. Hãy chọn thư mục ở bên trái.</p>
+          <p className="text-sm">{entries.length > 0 ? 'Tất cả thư mục đang bị ẩn.' : 'Chưa có bài nào. Hãy chọn thư mục ở bên trái.'}</p>
         </div>
       )}
 
       {/* ── DnD list ── */}
-      {entries.length > 0 && (
+      {visibleEntries.length > 0 && (
         <DragDropContext onDragEnd={handleDragEnd}>
           <Droppable droppableId="main-tracklist">
             {(provided) => (

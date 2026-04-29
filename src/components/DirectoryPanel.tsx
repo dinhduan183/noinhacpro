@@ -1,5 +1,5 @@
 import React from 'react';
-import { FolderOpen, Shuffle, RotateCcw, X, GripVertical, Copy } from 'lucide-react';
+import { FolderOpen, Shuffle, RotateCcw, X, GripVertical, Copy, Eye, EyeOff } from 'lucide-react';
 import type { PanelState } from '../types';
 import { PANEL_COLORS } from '../types';
 
@@ -14,6 +14,7 @@ interface DirectoryPanelProps {
   onRandomize: (id: number) => void;
   onReset: (id: number) => void;
   onRemovePanel: (id: number) => void;
+  onToggleEnabled: (id: number) => void;
 }
 
 export const DirectoryPanel: React.FC<DirectoryPanelProps> = ({
@@ -27,12 +28,15 @@ export const DirectoryPanel: React.FC<DirectoryPanelProps> = ({
   onRandomize,
   onReset,
   onRemovePanel,
+  onToggleEnabled,
 }) => {
   const color = PANEL_COLORS[(panel.id - 1) % PANEL_COLORS.length];
+  const isEnabled = panel.enabled !== false;
 
   return (
-    <div className={`bg-slate-800/60 border rounded-xl px-3 py-2.5 interactive transition-shadow
-      ${isDragging ? 'border-indigo-500/40 shadow-lg shadow-black/30' : 'border-slate-700/50'}`}>
+    <div className={`bg-slate-800/60 border rounded-xl px-3 py-2.5 interactive transition-all
+      ${isDragging ? 'border-indigo-500/40 shadow-lg shadow-black/30' : 'border-slate-700/50'}
+      ${!isEnabled ? 'opacity-50' : ''}`}>
 
       {/* Row 1: grip · dot · name · x */}
       <div className="flex items-center gap-2">
@@ -62,6 +66,21 @@ export const DirectoryPanel: React.FC<DirectoryPanelProps> = ({
             </span>
           )}
         </button>
+
+        {/* Eye toggle — only when folder selected */}
+        {panel.dirPath && (
+          <button
+            onClick={() => onToggleEnabled(panel.id)}
+            title={isEnabled ? 'Ẩn khỏi tracklist (tạm thời)' : 'Hiện lại trong tracklist'}
+            className={`shrink-0 w-6 h-6 flex items-center justify-center rounded transition-colors ${
+              isEnabled
+                ? 'text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10'
+                : 'text-slate-600 hover:text-emerald-400 hover:bg-emerald-500/10'
+            }`}
+          >
+            {isEnabled ? <Eye size={13} /> : <EyeOff size={13} />}
+          </button>
+        )}
 
         {/* Duplicate button — only when folder selected */}
         {panel.dirPath && (
