@@ -1,14 +1,13 @@
 #!/bin/bash
-# Script: commit GitHub Actions workflow + dời tag v2.0 sang commit mới
-# Sau khi push, GitHub Actions sẽ tự build .dmg + .exe và tạo Release
+# Script: commit fix icon (256x256) + dời tag v2.0 → trigger lại GitHub Actions build
 # Double-click trong Finder để chạy
 
 set -e
 cd "$(dirname "$0")"
 
 echo "════════════════════════════════════════════"
-echo "  Bổ sung CI/CD và re-tag v2.0"
-echo "  Để GitHub Actions tự build .exe + .dmg"
+echo "  Fix lỗi build Windows: icon.ico < 256x256"
+echo "  → commit + re-tag v2.0 để build lại"
 echo "════════════════════════════════════════════"
 echo ""
 
@@ -21,7 +20,7 @@ echo "[1] Trạng thái hiện tại:"
 git status --short
 echo ""
 
-echo "[2] Stage thay đổi (workflow + script update)..."
+echo "[2] Stage thay đổi..."
 git add -A
 echo "✓ Đã stage"
 echo ""
@@ -30,14 +29,15 @@ if git diff --cached --quiet; then
   echo "[3] Không có thay đổi mới — bỏ qua commit."
   NEW_COMMIT=false
 else
-  echo "[3] Tạo commit cho CI/CD..."
-  git commit -m "ci: thêm GitHub Actions tự build .dmg (Mac) và .exe (Windows) khi push tag v*
+  echo "[3] Tạo commit fix icon..."
+  git commit -m "fix(build): tạo lại icon.ico multi-size 16/32/48/64/128/256 cho Windows
 
-Workflow tại .github/workflows/build-release.yml:
-- Trigger trên push tag bắt đầu bằng 'v' (v2.0, v2.1, v3.0...)
-- Build song song trên macos-latest và windows-latest
-- Tự upload installer vào GitHub Release tương ứng
-- Có thể chạy thủ công qua workflow_dispatch"
+electron-builder yêu cầu icon Windows tối thiểu 256x256.
+icon.ico cũ chỉ 32x32 → build:win fail với:
+  ⨯ image public/icon.ico must be at least 256x256
+
+Đã regenerate từ icon.png (512x512) gốc với 6 frame chuẩn,
+đảm bảo Windows hiển thị icon sắc nét ở mọi DPI."
   echo "✓ Đã commit"
   NEW_COMMIT=true
 fi
@@ -48,9 +48,8 @@ git push origin main
 echo "✓ Đã push main"
 echo ""
 
-# Chỉ re-tag nếu có commit mới
 if [ "$NEW_COMMIT" = "true" ]; then
-  echo "[5] Dời tag v2.0 sang commit mới (có workflow)..."
+  echo "[5] Dời tag v2.0 sang commit mới (đã fix icon)..."
 
   # Xoá tag cũ cục bộ
   if git rev-parse v2.0 >/dev/null 2>&1; then
@@ -64,7 +63,7 @@ if [ "$NEW_COMMIT" = "true" ]; then
     echo "  ✓ Đã xoá tag v2.0 trên GitHub"
   fi
 
-  # Tạo lại tag mới ở HEAD (commit mới có workflow)
+  # Tạo lại tag mới ở HEAD
   git tag -a v2.0 -m "Release v2.0 — Ẩn/hiện panel thư mục
 
 Tính năng mới:
@@ -75,6 +74,7 @@ Tính năng mới:
 
 Sửa lỗi:
 • Electron build không bundle nhầm ffmpeg/ffprobe installer
+• Icon Windows được tạo lại đúng kích thước 256x256
 
 CI/CD:
 • GitHub Actions tự build .dmg (Mac) + .exe (Windows) khi push tag
@@ -84,9 +84,8 @@ Khác:
 • Thêm script Mở App.command cho macOS"
   echo "  ✓ Đã tạo lại tag v2.0"
 
-  # Push tag lên — sẽ TRIGGER workflow
   git push origin v2.0
-  echo "  ✓ Đã push tag v2.0 (workflow đang chạy)"
+  echo "  ✓ Đã push tag v2.0 → workflow đang chạy lại"
 else
   echo "[5] Không có commit mới → giữ nguyên tag v2.0"
 fi
@@ -98,7 +97,7 @@ echo ""
 echo "  Theo dõi build (mất ~10-15 phút):"
 echo "  https://github.com/dinhduan183/noinhacpro/actions"
 echo ""
-echo "  Khi build xong, tải installer tại:"
+echo "  Khi xong, tải installer tại:"
 echo "  https://github.com/dinhduan183/noinhacpro/releases"
 echo "════════════════════════════════════════════"
 echo ""
